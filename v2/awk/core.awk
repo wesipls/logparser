@@ -1,14 +1,12 @@
-# core.awk
-# Unified log processing engine
+# core.awk - minimal, clean log parser
 
 BEGIN {
     IGNORECASE = ignore_case ? 1 : 0
 
-    # Dedup mode parsing
-    dedup_mode = dedup
-    if (dedup_mode == "" || dedup_mode == "none") {
-        dedup_enabled = 0
-    } else {
+    dedup_enabled = (dedup == "1")
+
+    # auto-enable dedup if strip is set
+    if (dedup_strip != "" && !dedup_enabled) {
         dedup_enabled = 1
     }
 
@@ -18,98 +16,133 @@ BEGIN {
 }
 
 # ------------------------
-# Helper: get dedup key
+# Normalize text
 # ------------------------
-function get_key(line,   key, idx) {
-    if (!dedup_enabled) {
-        return line
-    }
+function normalize(text,   tmp) {
+    tmp = text
 
-    # Full line dedup
-    if (dedup_mode == "full") {
-        return line
-    }
-
-    # Field-based dedup
-    split(line, fields, FS)
-
-    if (dedup_mode == "last") {
-        return fields[length(fields)]
-    }
-
-    if (dedup_mode == "second-last") {
-        return fields[length(fields)-1]
-    }
-
-    # Numeric field index
-    if (dedup_mode ~ /^[0-9]+$/) {
-        idx = dedup_mode
-        return fields[idx]
-    }
-
-    # Regex strip mode
     if (dedup_strip != "") {
-        key = line
-        gsub(dedup_strip, "", key)
-        return key
+        gsub(dedup_strip, "", tmp)
     }
 
-    return line
+    # normalize whitespace
+    gsub(/[ \t]+/, " ", tmp)
+    gsub(/ *\n/, "\n", tmp)
+
+    # trim leading
+    sub(/^[ \t]+/, "", tmp)
+
+    # trim trailing
+    sub(/[ \t]+$/, "", tmp)
+
+    return tmp
 }
 
 # ------------------------
-# MATCH / COUNT MODE
+# Dedup key
 # ------------------------
-mode != "block" {
-    if ($0 ~ pattern) {
+function get_key(text) {
+    if (!dedup_enabled) {
+        return text
+    }
+    return normalize(text)
+}
 
-        key = get_key($0)
+# ------------------------
+# Process line
+# ------------------------
+function process_line(line,   key) {
+    key = get_key(line)
 
-        if (!dedup_enabled || !seen[key]++) {
-            if (mode == "count") {
-                count++
-            } else {
-                print $0
-            }
+    if (!dedup_enabled || !seen[key]++) {
+        if (mode == "count") {
+            count++
+        } else {
+            print line
         }
     }
 }
 
 # ------------------------
-# BLOCK MODE
+# Process block
+# ------------------------
+function process_block(b,   key) {
+
+    # skip empty blocks
+    if (b ~ /^[ \n]*$/) {
+        return
+    }
+
+    key = get_key(b)
+
+    if (!dedup_enabled || !seen[key]++) {
+        if (mode == "count") {
+            count++
+        } else {
+            printf "%s", b
+        }
+    }
+}
+
+# ------------------------
+# LINE MODE
+# ------------------------
+mode != "block" {
+    if ($0 ~ pattern) {
+        process_line($0)
+    }
+}
+
+# ------------------------
+# BLOCK MODE (supports delimiter)
 # ------------------------
 mode == "block" {
-    # Start of block
+
+    # delimiter mode (start == end)
+    if ($0 ~ start_pattern && start_pattern == end_pattern) {
+
+        if (block_active) {
+            process_block(block)
+            block = ""
+            block_active = 0
+        } else {
+            block_active = 1
+            block = ""
+        }
+
+        next
+    }
+
+    # start block
     if ($0 ~ start_pattern) {
         block_active = 1
         block = $0 "\n"
         next
     }
 
-    # Inside block
+    # inside block
     if (block_active) {
         block = block $0 "\n"
 
-        # End of block
+        # end block
         if ($0 ~ end_pattern) {
-
-            key = get_key(block)
-
-            if (!dedup_enabled || !seen[key]++) {
-                if (mode == "count") {
-                    count++
-                } else {
-                    printf "%s", block
-                }
-            }
-
+            process_block(block)
             block = ""
             block_active = 0
         }
     }
 }
 
+# ------------------------
+# END
+# ------------------------
 END {
+
+    # flush last block (important!)
+    if (mode == "block" && block_active) {
+        process_block(block)
+    }
+
     if (mode == "count") {
         print count
     }
