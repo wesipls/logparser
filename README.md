@@ -2,7 +2,7 @@
 
 A fast, minimal CLI tool for parsing and filtering logs using simple patterns.
 
-Built for manual use — quick inspection, debugging, and ad-hoc log analysis.
+Built for manual use to remove noise and duplicates from huge log files.
 
 ---
 
