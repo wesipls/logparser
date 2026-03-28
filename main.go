@@ -28,6 +28,12 @@ type Config struct {
 func main() {
 	cfg := parseFlags()
 
+	if noInputProvided(cfg) {
+		fmt.Fprintln(os.Stderr, "logparser: no input provided (use -input or pipe data)")
+		flag.Usage()
+		os.Exit(1)
+	}
+
 	if err := run(cfg); err != nil {
 		fmt.Fprintln(os.Stderr, "logparser:", err)
 		os.Exit(3)
@@ -61,6 +67,20 @@ func parseFlags() Config {
 
 	flag.Parse()
 	return cfg
+}
+
+func noInputProvided(cfg Config) bool {
+	if cfg.Input != "" {
+		return false
+	}
+
+	stat, err := os.Stdin.Stat()
+	if err != nil {
+		return true
+	}
+
+	stdinIsTerminal := (stat.Mode() & os.ModeCharDevice) != 0
+	return stdinIsTerminal
 }
 
 func run(cfg Config) error {
