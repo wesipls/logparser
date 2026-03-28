@@ -11,6 +11,9 @@ import (
 	"strings"
 )
 
+// version is set at build time via -ldflags
+var version = "dev"
+
 //go:embed awk/core.awk
 var awkFS embed.FS
 
@@ -42,6 +45,10 @@ func main() {
 
 func parseFlags() Config {
 	cfg := Config{}
+
+	// version flag
+	showVersion := flag.Bool("version", false, "show version")
+	flag.BoolVar(showVersion, "v", false, "show version (shorthand)")
 
 	flag.StringVar(&cfg.Input, "input", "", "input file (default: stdin)")
 	flag.StringVar(&cfg.Input, "i", "", "input file (shorthand)")
@@ -84,6 +91,13 @@ func parseFlags() Config {
 	}
 
 	flag.Parse()
+
+	// handle version flag early
+	if *showVersion {
+		fmt.Printf("logparser %s\n", version)
+		os.Exit(0)
+	}
+
 	return cfg
 }
 
