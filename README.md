@@ -43,6 +43,13 @@ Or manually:
 go build -o logparser .
 ```
 
+Optional, add it to $PATH
+```bash
+mkdir -p ~/.local/bin
+mv logparser ~/.local/bin/
+export PATH="$HOME/.local/bin:$PATH"
+```
+
 ---
 
 ## Usage
