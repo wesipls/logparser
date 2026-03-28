@@ -29,7 +29,7 @@ func main() {
 	cfg := parseFlags()
 
 	if noInputProvided(cfg) {
-		fmt.Fprintln(os.Stderr, "logparser: no input provided (use -input or pipe data)")
+		fmt.Fprintln(os.Stderr, "logparser: no input provided (use -i/--input or pipe data)")
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -44,22 +44,40 @@ func parseFlags() Config {
 	cfg := Config{}
 
 	flag.StringVar(&cfg.Input, "input", "", "input file (default: stdin)")
+	flag.StringVar(&cfg.Input, "i", "", "input file (shorthand)")
+
 	flag.StringVar(&cfg.Mode, "mode", "line", "mode: line | block | count")
+	flag.StringVar(&cfg.Mode, "m", "line", "mode shorthand: line | block | count")
+
 	flag.StringVar(&cfg.Pattern, "pattern", ".", "match pattern for line/count mode")
+	flag.StringVar(&cfg.Pattern, "p", ".", "match pattern shorthand for line/count mode")
+
 	flag.StringVar(&cfg.StartPattern, "start", "", "block start pattern")
+	flag.StringVar(&cfg.StartPattern, "s", "", "block start pattern (shorthand)")
+
 	flag.StringVar(&cfg.EndPattern, "end", "", "block end pattern")
+	flag.StringVar(&cfg.EndPattern, "e", "", "block end pattern (shorthand)")
+
 	flag.BoolVar(&cfg.Dedup, "dedup", false, "enable deduplication")
+	flag.BoolVar(&cfg.Dedup, "d", false, "enable deduplication (shorthand)")
+
 	flag.StringVar(&cfg.DedupStrip, "dedup-strip", "", "regex to strip before dedup comparison")
+	flag.StringVar(&cfg.DedupStrip, "D", "", "regex to strip before dedup comparison (shorthand)")
+
 	flag.BoolVar(&cfg.CaseSensitive, "case-sensitive", false, "enable case-sensitive matching")
+	flag.BoolVar(&cfg.CaseSensitive, "c", false, "enable case-sensitive matching (shorthand)")
 
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
 		fmt.Fprintf(out, "Usage: %s [options]\n\n", filepath.Base(os.Args[0]))
+		fmt.Fprintln(out, "Short and long flags are both supported.")
+		fmt.Fprintln(out, "")
 		fmt.Fprintln(out, "Examples:")
-		fmt.Fprintln(out, `  logparser -input /var/log/app.log -pattern "error|fatal"`)
-		fmt.Fprintln(out, `  logparser -input /var/log/app.log -pattern "error|fatal" -case-sensitive`)
-		fmt.Fprintln(out, `  logparser -input /var/log/app.log -mode count -pattern "error|fatal"`)
-		fmt.Fprintln(out, `  logparser -input stack.log -mode block -start "^Exception" -end "^$" -dedup`)
+		fmt.Fprintln(out, `  logparser -i /var/log/app.log -p "error|fatal"`)
+		fmt.Fprintln(out, `  logparser --input /var/log/app.log --pattern "error|fatal"`)
+		fmt.Fprintln(out, `  logparser -i /var/log/app.log -p "error|fatal" -c`)
+		fmt.Fprintln(out, `  logparser --input /var/log/app.log --mode count --pattern "error|fatal"`)
+		fmt.Fprintln(out, `  logparser -i stack.log -m block -s "^Exception" -e "^$" -d`)
 		fmt.Fprintln(out, "")
 		fmt.Fprintln(out, "Options:")
 		flag.PrintDefaults()
@@ -127,14 +145,14 @@ func validate(cfg Config) error {
 
 	if cfg.Mode == "block" {
 		if cfg.StartPattern == "" {
-			return errors.New("block mode requires -start")
+			return errors.New("block mode requires -s/--start")
 		}
 		if cfg.EndPattern == "" {
-			return errors.New("block mode requires -end")
+			return errors.New("block mode requires -e/--end")
 		}
 	} else {
 		if strings.TrimSpace(cfg.Pattern) == "" {
-			return errors.New("line/count mode requires -pattern")
+			return errors.New("line/count mode requires -p/--pattern")
 		}
 	}
 
@@ -153,7 +171,6 @@ func buildAWKArgs(cfg Config, awkPath string) []string {
 		"-f", awkPath,
 	}
 
-	// awk reads from stdin because we attach file/stdin there.
 	return args
 }
 
