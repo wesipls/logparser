@@ -49,7 +49,7 @@ mkdir -p ~/.local/bin
 mv logparser ~/.local/bin/
 export PATH="$HOME/.local/bin:$PATH"
 ```
-To make it permantent, add the esxport command to your ~/.bashrc or ~/.profile.
+To make it permantent, add the export command to your ~/.bashrc or ~/.profile.
 
 ---
 
