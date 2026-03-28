@@ -15,14 +15,14 @@ import (
 var awkFS embed.FS
 
 type Config struct {
-	Input        string
-	Mode         string
-	Pattern      string
-	StartPattern string
-	EndPattern   string
-	Dedup        bool
-	DedupStrip   string
-	IgnoreCase   bool
+	Input         string
+	Mode          string
+	Pattern       string
+	StartPattern  string
+	EndPattern    string
+	Dedup         bool
+	DedupStrip    string
+	CaseSensitive bool
 }
 
 func main() {
@@ -35,7 +35,7 @@ func main() {
 }
 
 func parseFlags() Config {
-	var cfg Config
+	cfg := Config{}
 
 	flag.StringVar(&cfg.Input, "input", "", "input file (default: stdin)")
 	flag.StringVar(&cfg.Mode, "mode", "line", "mode: line | block | count")
@@ -44,13 +44,14 @@ func parseFlags() Config {
 	flag.StringVar(&cfg.EndPattern, "end", "", "block end pattern")
 	flag.BoolVar(&cfg.Dedup, "dedup", false, "enable deduplication")
 	flag.StringVar(&cfg.DedupStrip, "dedup-strip", "", "regex to strip before dedup comparison")
-	flag.BoolVar(&cfg.IgnoreCase, "ignore-case", false, "case-insensitive matching")
+	flag.BoolVar(&cfg.CaseSensitive, "case-sensitive", false, "enable case-sensitive matching")
 
 	flag.Usage = func() {
 		out := flag.CommandLine.Output()
 		fmt.Fprintf(out, "Usage: %s [options]\n\n", filepath.Base(os.Args[0]))
 		fmt.Fprintln(out, "Examples:")
 		fmt.Fprintln(out, `  logparser -input /var/log/app.log -pattern "error|fatal"`)
+		fmt.Fprintln(out, `  logparser -input /var/log/app.log -pattern "error|fatal" -case-sensitive`)
 		fmt.Fprintln(out, `  logparser -input /var/log/app.log -mode count -pattern "error|fatal"`)
 		fmt.Fprintln(out, `  logparser -input stack.log -mode block -start "^Exception" -end "^$" -dedup`)
 		fmt.Fprintln(out, "")
@@ -128,7 +129,7 @@ func buildAWKArgs(cfg Config, awkPath string) []string {
 		"-v", "end_pattern=" + cfg.EndPattern,
 		"-v", "dedup=" + boolToAwk(cfg.Dedup),
 		"-v", "dedup_strip=" + cfg.DedupStrip,
-		"-v", "ignore_case=" + boolToAwk(cfg.IgnoreCase),
+		"-v", "ignore_case=" + boolToAwk(!cfg.CaseSensitive),
 		"-f", awkPath,
 	}
 
