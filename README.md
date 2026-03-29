@@ -17,6 +17,9 @@ Built for manual use to remove noise and duplicates from huge log files.
 
 ---
 
+> [!IMPORTANT]
+> logparser uses AWK (POSIX ERE) regular expressions, not PCRE.
+
 ## Installation
 
 ### Download prebuilt binary
