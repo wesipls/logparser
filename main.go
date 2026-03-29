@@ -8,24 +8,29 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
 // version is set at build time via -ldflags
 var version = "dev"
 
+const defaultPattern = "error|fatal|panic|exception|failed|failure|critical"
+
 //go:embed awk/core.awk
 var awkFS embed.FS
 
 type Config struct {
-	Input         string
-	Mode          string
-	Pattern       string
-	StartPattern  string
-	EndPattern    string
-	Dedup         bool
-	DedupStrip    string
-	CaseSensitive bool
+	Input             string
+	Mode              string
+	Pattern           string
+	StartPattern      string
+	EndPattern        string
+	Dedup             bool
+	DedupStrip        string
+	DedupFields       string
+	DedupIgnoreFields string
+	CaseSensitive     bool
 }
 
 func main() {
@@ -46,7 +51,6 @@ func main() {
 func parseFlags() Config {
 	cfg := Config{}
 
-	// version flag
 	showVersion := flag.Bool("version", false, "show version")
 	flag.BoolVar(showVersion, "v", false, "show version (shorthand)")
 
@@ -56,8 +60,8 @@ func parseFlags() Config {
 	flag.StringVar(&cfg.Mode, "mode", "line", "mode: line | block | count")
 	flag.StringVar(&cfg.Mode, "m", "line", "mode shorthand: line | block | count")
 
-	flag.StringVar(&cfg.Pattern, "pattern", ".", "match pattern for line/count mode")
-	flag.StringVar(&cfg.Pattern, "p", ".", "match pattern shorthand for line/count mode")
+	flag.StringVar(&cfg.Pattern, "pattern", "", "match pattern for line/count mode (default: common error keywords)")
+	flag.StringVar(&cfg.Pattern, "p", "", "match pattern shorthand for line/count mode")
 
 	flag.StringVar(&cfg.StartPattern, "start", "", "block start pattern")
 	flag.StringVar(&cfg.StartPattern, "s", "", "block start pattern (shorthand)")
@@ -65,11 +69,24 @@ func parseFlags() Config {
 	flag.StringVar(&cfg.EndPattern, "end", "", "block end pattern")
 	flag.StringVar(&cfg.EndPattern, "e", "", "block end pattern (shorthand)")
 
-	flag.BoolVar(&cfg.Dedup, "dedup", false, "enable deduplication")
-	flag.BoolVar(&cfg.Dedup, "d", false, "enable deduplication (shorthand)")
+	flag.BoolVar(&cfg.Dedup, "dedup", true, "enable deduplication (default: true)")
+	flag.BoolFunc("no-dedup", "disable deduplication", func(string) error {
+		cfg.Dedup = false
+		return nil
+	})
+	flag.BoolFunc("d", "disable deduplication (shorthand)", func(string) error {
+		cfg.Dedup = false
+		return nil
+	})
 
-	flag.StringVar(&cfg.DedupStrip, "dedup-strip", "", "regex to strip before dedup comparison")
-	flag.StringVar(&cfg.DedupStrip, "D", "", "regex to strip before dedup comparison (shorthand)")
+	flag.StringVar(&cfg.DedupStrip, "dedup-strip", "", "awk regex to strip before dedup comparison")
+	flag.StringVar(&cfg.DedupStrip, "D", "", "awk regex to strip before dedup comparison (shorthand)")
+
+	flag.StringVar(&cfg.DedupFields, "dedup-fields", "", "comma-separated 1-based fields to use for dedup comparison")
+	flag.StringVar(&cfg.DedupFields, "F", "", "comma-separated 1-based fields to use for dedup comparison (shorthand)")
+
+	flag.StringVar(&cfg.DedupIgnoreFields, "dedup-ignore-fields", "", "comma-separated 1-based fields to ignore for dedup comparison")
+	flag.StringVar(&cfg.DedupIgnoreFields, "I", "", "comma-separated 1-based fields to ignore for dedup comparison (shorthand)")
 
 	flag.BoolVar(&cfg.CaseSensitive, "case-sensitive", false, "enable case-sensitive matching")
 	flag.BoolVar(&cfg.CaseSensitive, "c", false, "enable case-sensitive matching (shorthand)")
@@ -79,12 +96,18 @@ func parseFlags() Config {
 		fmt.Fprintf(out, "Usage: %s [options]\n\n", filepath.Base(os.Args[0]))
 		fmt.Fprintln(out, "Short and long flags are both supported.")
 		fmt.Fprintln(out, "")
+		fmt.Fprintf(out, "Default line/count pattern: %q\n", defaultPattern)
+		fmt.Fprintln(out, "Defaults: case-insensitive matching, deduplication enabled.")
+		fmt.Fprintln(out, "")
 		fmt.Fprintln(out, "Examples:")
+		fmt.Fprintln(out, `  logparser -i /var/log/app.log`)
+		fmt.Fprintln(out, `  logparser -i /var/log/app.log --no-dedup`)
 		fmt.Fprintln(out, `  logparser -i /var/log/app.log -p "error|fatal"`)
-		fmt.Fprintln(out, `  logparser --input /var/log/app.log --pattern "error|fatal"`)
-		fmt.Fprintln(out, `  logparser -i /var/log/app.log -p "error|fatal" -c`)
+		fmt.Fprintln(out, `  logparser -i /var/log/app.log --dedup-strip '^[0-9/ :]+'`)
+		fmt.Fprintln(out, `  logparser -i users.log -F 1,3,4`)
+		fmt.Fprintln(out, `  logparser -i users.log -I 2`)
 		fmt.Fprintln(out, `  logparser --input /var/log/app.log --mode count --pattern "error|fatal"`)
-		fmt.Fprintln(out, `  logparser -i stack.log -m block -s "^Exception" -e "^$" -d`)
+		fmt.Fprintln(out, `  logparser -i stack.log -m block -s "^Exception" -e "^$" --no-dedup`)
 		fmt.Fprintln(out, "")
 		fmt.Fprintln(out, "Options:")
 		flag.PrintDefaults()
@@ -92,10 +115,17 @@ func parseFlags() Config {
 
 	flag.Parse()
 
-	// handle version flag early
 	if *showVersion {
 		fmt.Printf("logparser %s\n", version)
 		os.Exit(0)
+	}
+
+	if cfg.Mode != "block" && strings.TrimSpace(cfg.Pattern) == "" {
+		cfg.Pattern = defaultPattern
+	}
+
+	if strings.TrimSpace(cfg.DedupStrip) != "" || strings.TrimSpace(cfg.DedupFields) != "" || strings.TrimSpace(cfg.DedupIgnoreFields) != "" {
+		cfg.Dedup = true
 	}
 
 	return cfg
@@ -170,6 +200,33 @@ func validate(cfg Config) error {
 		}
 	}
 
+	if err := validateFieldList("dedup-fields", cfg.DedupFields); err != nil {
+		return err
+	}
+	if err := validateFieldList("dedup-ignore-fields", cfg.DedupIgnoreFields); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func validateFieldList(name, raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			return fmt.Errorf("%s must be a comma-separated list of 1-based field numbers", name)
+		}
+		n, err := strconv.Atoi(part)
+		if err != nil || n <= 0 {
+			return fmt.Errorf("%s must be a comma-separated list of 1-based field numbers", name)
+		}
+	}
+
 	return nil
 }
 
@@ -181,6 +238,8 @@ func buildAWKArgs(cfg Config, awkPath string) []string {
 		"-v", "end_pattern=" + cfg.EndPattern,
 		"-v", "dedup=" + boolToAwk(cfg.Dedup),
 		"-v", "dedup_strip=" + cfg.DedupStrip,
+		"-v", "dedup_fields=" + cfg.DedupFields,
+		"-v", "dedup_ignore_fields=" + cfg.DedupIgnoreFields,
 		"-v", "ignore_case=" + boolToAwk(!cfg.CaseSensitive),
 		"-f", awkPath,
 	}
