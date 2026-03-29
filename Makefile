@@ -2,7 +2,7 @@ BINARY=logparser
 PKG=./
 
 # default version (can be overridden)
-VERSION?=0.2
+VERSION?=0.3.1
 
 LDFLAGS=-ldflags "-X main.version=$(VERSION)"
 
